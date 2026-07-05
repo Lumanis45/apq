@@ -9,7 +9,4 @@
 - `apq --ask <package-name>`
 
 #### Build:
-- With optimizations:
-  - `./make -O[1|2|3] -march=native`
-- Without:
-  - `./make`
+- `./make`
