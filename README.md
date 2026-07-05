@@ -8,5 +8,8 @@
 #### Usage:
 - `apq --ask <package-name>`
 
-#### Build:
-- `./make`
+#### Install:
+- `make`
+- `sudo make install`
+#### Uninstall:
+- `sudo make uninstall`
