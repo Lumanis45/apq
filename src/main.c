@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 
 int install_aur_pkg(const char *pkg, int is_dep);
 void check_and_install_deps(const char *path);
@@ -19,22 +20,41 @@ int run_cmd(char *argv[]) {
 }
 
 int install_aur_pkg(const char *pkg, int is_dep) {
-  char url[256], path[256];
-  snprintf(url, sizeof(url), "https://aur.archlinux.org/%s.git", pkg);
-  snprintf(path, sizeof(path), "/tmp/apq-%s", pkg);
+  char check_cmd[256];
+  snprintf(check_cmd, sizeof(check_cmd), "pacman -Qi %s >/dev/null 2>&1", pkg);
+  if (system(check_cmd) == 0) return 0;
 
-  char cwd[512];
+  char url[256], path[256], cwd[512], mkdir_path[512];
+  const char *home = getenv("HOME");
+
+  snprintf(url, sizeof(url), "https://aur.archlinux.org/%s.git", pkg);
+  snprintf(path, sizeof(path), "%s/.cache/apq/clone/%s", home ? home : "/tmp", pkg);
+  snprintf(mkdir_path, sizeof(mkdir_path), "mkdir -p %s/.cache/apq/clone/", home ? home : "/tmp");
+  system(mkdir_path);
+  
   if (!getcwd(cwd, sizeof(cwd))) return 1;
   
-  char *git_args[] = {"git", "clone", "-q", url, path, NULL};
-  if (run_cmd(git_args) != 0) {
-    if (access(path, F_OK) != 0) return 1;
+  if (access(path, F_OK) == 0) {
+    chdir(path);
+    char *pull_args[] = {"git", "pull", "-q", NULL};
+    run_cmd(pull_args);
+    chdir(cwd);
+  } else {
+    char *git_args[] = {"git", "clone", "-q", url, path, NULL};
+    if (run_cmd(git_args) != 0) return 1;
   }
   check_and_install_deps(path);
+  if (chdir(path) != 0) return 1;
+  setenv("MAKEFLAGS", "-j$(nproc)", 1);
 
-  chdir(path);
-  char *make_args[] = {"makepkg", "-sic", "--noconfirm", is_dep ? "--asdeps" : NULL, NULL};
+  char *make_args[] = {"makepkg", "-sc", "--noconfirm", is_dep ? "--asdeps" : NULL, NULL};
   int res = run_cmd(make_args);
+
+  if (res == 0) {
+    char pac_cmd[512];
+    snprintf(pac_cmd, sizeof(pac_cmd), "sudo pacman -U --noconfirm %s *.pkg.tar.zst", is_dep ? "--asdeps" : "");
+    res = system(pac_cmd);
+  }
 
   chdir(cwd);
   return res;
@@ -48,10 +68,11 @@ void check_and_install_deps(const char *path) {
 
   while (fgets(line, sizeof(line), fp)) {
     char *dep = strstr(line, "depends = ");
-    if (dep) {
+    if (dep && (dep == line || *(dep - 1) == '\t' || *(dep -1) == ' ')) {
       dep += 10;
-      dep[strcspn(dep, "\n\r\t ")] = 0;
+      dep[strcspn(dep, "\n\r\t >=<")] = 0;
 
+      if (strlen(dep) == 0) continue;
       char pac_cmd[256];
       snprintf(pac_cmd, sizeof(pac_cmd), "pacman -Sp %s >/dev/null 2>&1", dep);
       if (system(pac_cmd) != 0) {
@@ -65,12 +86,15 @@ void check_and_install_deps(const char *path) {
 int main(int argc, char **argv)
 {
   if (argc < 3) {
-    puts("Usage: apq --ask <package>");
+    puts("Usage: apq -S <package>");
+    puts("Version: 0.2a");
     return 1;
   }
   
   char *command = argv[1];
-  if (strcmp(command, "--ask") == 0) {
+  if (strcmp(command, "-S") == 0) {
+    if (system("sudo -v") != 0) return 1;
+    
     for (int i = 2; i < argc; i++) {
       install_aur_pkg(argv[i], 0);
     }

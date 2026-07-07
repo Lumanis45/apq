@@ -2,7 +2,7 @@
 CC=clang
 CFLAGS=-O2 -s
 
-.PHONY: install uninstall
+.PHONY: install uninstall reinstall
 
 NAME=apq
 TARGET=build/$(NAME)
@@ -21,3 +21,5 @@ install: all
 
 uninstall:
 	@rm -rf $(DESTDIR)$(BINDIR)/$(NAME) 
+
+reinstall: uninstall install
